@@ -277,7 +277,7 @@ elif menu == "➗ Eliminasi Gauss":
 
 .result-section { margin-top:16px; }
 .result-title { color:#60a5fa; font-size:.72rem; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:10px; }
-.sol-grid { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.sol-grid { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; max-height:320px; overflow-y:auto; padding:4px; }
 .sol-card {
     background:#0f172a; border:1px solid rgba(255,255,255,0.07);
     border-radius:10px; padding:10px 14px; min-width:90px; text-align:center;
@@ -451,19 +451,11 @@ function calculate() {
     // Tampilkan solusi
     const solGrid = document.getElementById('sol-grid');
     solGrid.innerHTML = '';
-    const showAll = N <= 50;
-    const limit = showAll ? N : 20;
-    for (let i = 0; i < limit; i++) {
+    for (let i = 0; i < N; i++) {
         const card = document.createElement('div');
         card.className = 'sol-card';
         card.innerHTML = '<div class="sol-var">x' + (i+1) + '</div><div class="sol-val">' + x[i].toFixed(4) + '</div>';
         solGrid.appendChild(card);
-    }
-    if (!showAll) {
-        const more = document.createElement('div');
-        more.style.cssText = 'color:#64748b;font-size:.8rem;align-self:center;padding:10px';
-        more.textContent = '... dan ' + (N-20) + ' variabel lainnya';
-        solGrid.appendChild(more);
     }
 
     const valid = maxErr < 1e-6;

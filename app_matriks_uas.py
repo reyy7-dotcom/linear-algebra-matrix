@@ -6,6 +6,7 @@
 # ============================================================
 
 import streamlit as st
+import streamlit.components.v1
 import numpy as np
 import pandas as pd
 import io
@@ -224,163 +225,268 @@ elif menu == "📊 Analisis Eigen":
 # ════════════════════════════════════════════════════════════
 elif menu == "➗ Eliminasi Gauss":
     st.markdown('<p class="section-label">Sistem Persamaan Linear Ax = b</p>', unsafe_allow_html=True)
-
     st.markdown("""<div class="info-card">
-    Input nilai matriks [A|b] langsung di tabel — klik sel untuk edit.
-    Gunakan tombol <b>🎲 Isi Otomatis</b> untuk generate angka random ke grid,
-    atau ketik manual per sel. Mendukung hingga <b>100×100</b>.
+    Atur ukuran matriks (Rows = Cols), klik <b>Set Matrix</b> untuk buat grid.
+    Gunakan <b>Auto (+)</b> untuk isi angka positif acak, atau <b>Auto (+/-)</b> untuk campuran.
+    Edit tiap sel manual, lalu klik <b>Calculate</b>.
     </div>""", unsafe_allow_html=True)
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        n_grid = st.number_input("Ukuran Sistem (n)", min_value=2, max_value=100, value=3, step=1)
-    with c2:
-        seed_g = st.number_input("Seed (untuk isi otomatis)", 0, 99999, 42)
-    with c3:
-        val_min = st.number_input("Nilai Min", -100, 100, 1)
-    with c4:
-        val_max = st.number_input("Nilai Maks", -100, 100, 10)
+    gauss_html = """
+<style>
+.gauss-wrap { font-family: 'Inter', sans-serif; }
+.gauss-controls { display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+.gauss-controls label { color:#94a3b8; font-size:.85rem; font-weight:600; }
+.gauss-controls input[type=number] {
+    width:80px; padding:8px 10px; background:#1e293b; border:1px solid rgba(255,255,255,0.12);
+    border-radius:8px; color:#f1f5f9; font-size:.9rem; text-align:center;
+}
+.gauss-controls input[type=number]:focus { outline:none; border-color:#60a5fa; }
+.gauss-btn {
+    padding:8px 18px; border:none; border-radius:8px; font-size:.82rem;
+    font-weight:600; cursor:pointer; transition:all .15s;
+}
+.btn-set   { background:#3b82f6; color:#fff; }
+.btn-auto1 { background:#7c3aed; color:#fff; }
+.btn-auto2 { background:#6d28d9; color:#fff; }
+.btn-clear { background:#374151; color:#e5e7eb; }
+.btn-calc  { background:#059669; color:#fff; font-size:.9rem; padding:10px 28px; }
+.gauss-btn:hover { opacity:.85; transform:translateY(-1px); }
 
-    n_grid = int(n_grid)
+.matrix-scroll {
+    overflow:auto; max-height:420px; max-width:100%;
+    border:1px solid rgba(255,255,255,0.08); border-radius:10px;
+    background:#0f172a; padding:12px; margin-bottom:14px;
+}
+.matrix-title {
+    color:#60a5fa; font-size:.72rem; font-weight:700;
+    letter-spacing:2px; text-transform:uppercase; margin-bottom:10px;
+}
+.matrix-grid { display:inline-block; }
+.matrix-row  { display:flex; gap:4px; margin-bottom:4px; align-items:center; }
+.row-label   { color:#475569; font-size:.7rem; width:28px; text-align:right; padding-right:6px; flex-shrink:0; }
+.cell-input  {
+    width:52px; height:36px; text-align:center; font-size:.8rem; font-weight:600;
+    background:#1e293b; border:1px solid rgba(255,255,255,0.08);
+    border-radius:6px; color:#f1f5f9; padding:0 4px;
+    transition:border-color .15s;
+}
+.cell-input:focus { outline:none; border-color:#60a5fa; background:#1e3a5f; }
+.cell-input.b-col { background:#1a1a3e; border-color:rgba(139,92,246,0.4); color:#c4b5fd; }
+.cell-input.b-col:focus { border-color:#a78bfa; }
+.sep-line { width:2px; height:36px; background:rgba(139,92,246,0.4); margin:0 4px; flex-shrink:0; }
 
-    # Tombol isi otomatis — generate ke session_state
-    if st.button("🎲 Isi Otomatis", help="Generate angka random ke tabel"):
-        np.random.seed(seed_g)
-        A_auto = np.random.randint(val_min if val_min < val_max else 1, val_max+1, size=(n_grid, n_grid)).astype(float)
-        # Diagonal dominan agar selalu punya solusi unik
-        np.fill_diagonal(A_auto, np.sum(np.abs(A_auto), axis=1) + 1)
-        b_auto = np.random.randint(val_min if val_min < val_max else 1, val_max+1, size=n_grid).astype(float)
-        Ab_auto = np.column_stack([A_auto, b_auto])
-        st.session_state["gauss_grid"] = Ab_auto
-        st.session_state["gauss_n"] = n_grid
+.result-section { margin-top:16px; }
+.result-title { color:#60a5fa; font-size:.72rem; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:10px; }
+.sol-grid { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.sol-card {
+    background:#0f172a; border:1px solid rgba(255,255,255,0.07);
+    border-radius:10px; padding:10px 14px; min-width:90px; text-align:center;
+}
+.sol-var { font-size:.68rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
+.sol-val { font-family:'JetBrains Mono',monospace; font-size:1rem; font-weight:700; color:#34d399; }
+.verif-box {
+    background:linear-gradient(135deg,#0f172a,#1e1b4b);
+    border:1px solid rgba(139,92,246,.3); border-radius:12px;
+    padding:16px 20px; text-align:center; margin-top:12px;
+}
+.verif-status { font-family:'JetBrains Mono',monospace; font-size:1.5rem; font-weight:700; }
+.status-ok  { color:#34d399; }
+.status-err { color:#f87171; }
+.error-msg  { color:#f87171; background:rgba(248,113,113,.1); border:1px solid rgba(248,113,113,.3); border-radius:8px; padding:10px 14px; font-size:.85rem; margin-top:10px; }
+</style>
 
-    # Inisialisasi grid jika belum ada atau ukuran berubah
-    if "gauss_grid" not in st.session_state or st.session_state.get("gauss_n") != n_grid:
-        Ab_init = np.zeros((n_grid, n_grid + 1))
-        # Isi contoh default untuk sistem kecil
-        if n_grid == 2:
-            Ab_init = np.array([[2,1,5],[4,3,11]], dtype=float)
-        elif n_grid == 3:
-            Ab_init = np.array([[2,1,-1,8],[-3,-1,2,-11],[-2,1,2,-3]], dtype=float)
-        st.session_state["gauss_grid"] = Ab_init
-        st.session_state["gauss_n"] = n_grid
+<div class="gauss-wrap">
+  <div class="gauss-controls">
+    <label>Rows:</label>
+    <input type="number" id="inp-rows" value="4" min="2" max="100">
+    <label>Cols:</label>
+    <input type="number" id="inp-cols" value="4" min="2" max="100" readonly style="opacity:.5">
+    <button class="gauss-btn btn-set"   onclick="setMatrix()">Set Matrix</button>
+    <button class="gauss-btn btn-auto1" onclick="autoFill(true)">⚡ Auto (+/-)</button>
+    <button class="gauss-btn btn-auto2" onclick="autoFill(false)">⚡ Auto (+)</button>
+    <button class="gauss-btn btn-clear" onclick="clearMatrix()">Clear</button>
+  </div>
 
-    Ab_current = st.session_state["gauss_grid"]
+  <div class="matrix-scroll" id="matrix-container">
+    <div class="matrix-title">INPUT MATRIX [A | b] — KLIK SEL UNTUK EDIT</div>
+    <div class="matrix-grid" id="matrix-grid"></div>
+  </div>
 
-    # Pastikan dimensi grid sesuai n_grid (jika user ubah n)
-    if Ab_current.shape != (n_grid, n_grid + 1):
-        Ab_current = np.zeros((n_grid, n_grid + 1))
-        st.session_state["gauss_grid"] = Ab_current
+  <div style="text-align:left;margin-bottom:12px">
+    <button class="gauss-btn btn-calc" onclick="calculate()">▶ Calculate</button>
+  </div>
 
-    # Tampilkan grid sebagai st.data_editor — bisa diedit per sel
-    st.markdown('<p class="section-label">Input Matriks [A | b] — Klik Sel untuk Edit</p>', unsafe_allow_html=True)
-    col_names = [f"x{i+1}" for i in range(n_grid)] + ["b (hasil)"]
-    df_grid = pd.DataFrame(Ab_current, columns=col_names, index=[f"P{i+1}" for i in range(n_grid)])
+  <div class="result-section" id="result-section" style="display:none">
+    <div class="result-title">SOLUSI x</div>
+    <div class="sol-grid" id="sol-grid"></div>
+    <div class="verif-box" id="verif-box"></div>
+  </div>
+</div>
 
-    edited_df = st.data_editor(
-        df_grid,
-        use_container_width=True,
-        height=min(400, 40 + n_grid * 35),
-        key=f"gauss_editor_{n_grid}",
-        column_config={col: st.column_config.NumberColumn(col, format="%.2f") for col in col_names}
-    )
+<script>
+let N = 4;
 
-    # Tombol selesaikan
-    if st.button("▶ Selesaikan dengan Eliminasi Gauss", type="primary"):
-        try:
-            Ab = edited_df.values.astype(float)
-            n = n_grid
-            A_orig = Ab[:, :n].copy()
-            b_orig = Ab[:, n].copy()
-            M = Ab.copy()
+function setMatrix() {
+    const r = parseInt(document.getElementById('inp-rows').value);
+    if (r < 2 || r > 100) { alert('Ukuran harus antara 2–100'); return; }
+    N = r;
+    document.getElementById('inp-cols').value = N;
+    buildGrid();
+    document.getElementById('result-section').style.display = 'none';
+}
 
-            # Validasi: cek apakah semua nol
-            if np.all(A_orig == 0):
-                st.error("Matriks A kosong — isi nilai dulu atau klik Isi Otomatis.")
-                st.stop()
+function buildGrid(values) {
+    const grid = document.getElementById('matrix-grid');
+    grid.innerHTML = '';
+    // Header row
+    const hdr = document.createElement('div');
+    hdr.className = 'matrix-row';
+    hdr.innerHTML = '<div class="row-label"></div>';
+    for (let j = 0; j < N; j++) {
+        const h = document.createElement('div');
+        h.style.cssText = 'width:52px;text-align:center;font-size:.68rem;color:#64748b;font-weight:700;padding-bottom:4px';
+        h.textContent = 'x' + (j+1);
+        hdr.appendChild(h);
+    }
+    hdr.innerHTML += '<div class="sep-line" style="height:20px;margin-bottom:0"></div>';
+    const bh = document.createElement('div');
+    bh.style.cssText = 'width:52px;text-align:center;font-size:.68rem;color:#a78bfa;font-weight:700;padding-bottom:4px';
+    bh.textContent = 'b';
+    hdr.appendChild(bh);
+    grid.appendChild(hdr);
 
-            # Eliminasi Gauss dengan partial pivoting
-            with st.spinner(f"Menghitung Eliminasi Gauss {n}×{n}..."):
-                steps = []
-                for col in range(n):
-                    max_row = int(np.argmax(np.abs(M[col:, col]))) + col
-                    if max_row != col:
-                        M[[col, max_row]] = M[[max_row, col]]
-                        if n <= 5:
-                            steps.append({"title": f"Tukar R{col+1} ↔ R{max_row+1}", "matrix": M.copy()})
-                    if abs(M[col, col]) < 1e-12:
-                        st.error("Matriks singular — tidak ada solusi unik. Coba ubah nilai matriks.")
-                        st.stop()
-                    for row in range(col+1, n):
-                        factor = M[row, col] / M[col, col]
-                        M[row] -= factor * M[col]
-                        if n <= 5:
-                            steps.append({"title": f"R{row+1} = R{row+1} − ({factor:.3f})×R{col+1}", "matrix": M.copy()})
+    // Data rows
+    for (let i = 0; i < N; i++) {
+        const row = document.createElement('div');
+        row.className = 'matrix-row';
+        const lbl = document.createElement('div');
+        lbl.className = 'row-label';
+        lbl.textContent = 'P' + (i+1);
+        row.appendChild(lbl);
+        for (let j = 0; j < N; j++) {
+            const inp = document.createElement('input');
+            inp.type = 'number'; inp.className = 'cell-input';
+            inp.id = 'c_' + i + '_' + j;
+            inp.value = values ? (values[i][j] || 0) : 0;
+            row.appendChild(inp);
+        }
+        const sep = document.createElement('div'); sep.className = 'sep-line';
+        row.appendChild(sep);
+        const b = document.createElement('input');
+        b.type = 'number'; b.className = 'cell-input b-col';
+        b.id = 'b_' + i; b.value = values ? (values[i][N] || 0) : 0;
+        row.appendChild(b);
+        grid.appendChild(row);
+    }
+}
 
-            # Langkah detail hanya untuk sistem ≤5
-            if n <= 5 and steps:
-                st.markdown('<p class="section-label">Langkah Eliminasi Maju</p>', unsafe_allow_html=True)
-                for i, s in enumerate(steps):
-                    with st.expander(f"Langkah {i+1}: {s['title']}"):
-                        st.dataframe(pd.DataFrame(np.round(s["matrix"], 4),
-                                                  columns=[f"x{j+1}" for j in range(n)]+["b"]),
-                                     use_container_width=True)
-            elif n > 5:
-                st.markdown('<p class="section-label">Matriks Segitiga Atas</p>', unsafe_allow_html=True)
-                st.info(f"Sistem {n}×{n} — langkah detail disembunyikan, tampil matriks akhir.")
-                st.dataframe(pd.DataFrame(np.round(M, 4),
-                                          columns=[f"x{i+1}" for i in range(n)]+["b"],
-                                          index=[f"P{i+1}" for i in range(n)]),
-                             height=300, use_container_width=True)
+function autoFill(allowNeg) {
+    for (let i = 0; i < N; i++) {
+        let rowSum = 0;
+        for (let j = 0; j < N; j++) {
+            if (i === j) continue;
+            const v = allowNeg ? (Math.floor(Math.random()*19)-9) : (Math.floor(Math.random()*9)+1);
+            document.getElementById('c_'+i+'_'+j).value = v;
+            rowSum += Math.abs(v);
+        }
+        // Diagonal dominan
+        document.getElementById('c_'+i+'_'+i).value = rowSum + Math.floor(Math.random()*5) + 1;
+        document.getElementById('b_'+i).value = allowNeg ? (Math.floor(Math.random()*19)-9) : (Math.floor(Math.random()*9)+1);
+    }
+    document.getElementById('result-section').style.display = 'none';
+}
 
-            # Substitusi mundur
-            x_sol = np.zeros(n)
-            for i in range(n-1, -1, -1):
-                x_sol[i] = (M[i, -1] - np.dot(M[i, i+1:n], x_sol[i+1:n])) / M[i, i]
+function clearMatrix() {
+    for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) document.getElementById('c_'+i+'_'+j).value = 0;
+        document.getElementById('b_'+i).value = 0;
+    }
+    document.getElementById('result-section').style.display = 'none';
+}
 
-            # Tampilkan solusi
-            st.markdown('<p class="section-label">Solusi x</p>', unsafe_allow_html=True)
-            if n <= 10:
-                sol_cols = st.columns(min(n, 5))
-                for i in range(n):
-                    sol_cols[i % 5].metric(f"x{i+1}", f"{x_sol[i]:.4f}")
-            else:
-                st.dataframe(pd.DataFrame({
-                    "Variabel": [f"x{i+1}" for i in range(n)],
-                    "Nilai": np.round(x_sol, 6)
-                }), height=320, use_container_width=True)
+function calculate() {
+    // Baca matriks augmented
+    let M = [];
+    for (let i = 0; i < N; i++) {
+        let row = [];
+        for (let j = 0; j < N; j++) row.push(parseFloat(document.getElementById('c_'+i+'_'+j).value) || 0);
+        row.push(parseFloat(document.getElementById('b_'+i).value) || 0);
+        M.push(row);
+    }
+    const A_orig = M.map(r => r.slice(0, N));
+    const b_orig = M.map(r => r[N]);
 
-            # Verifikasi
-            Ax = A_orig @ x_sol
-            max_err = float(np.max(np.abs(Ax - b_orig)))
-            valid = max_err < 1e-6
+    // Eliminasi Gauss dengan partial pivoting
+    for (let col = 0; col < N; col++) {
+        // Cari pivot terbesar
+        let maxRow = col;
+        for (let r = col+1; r < N; r++) if (Math.abs(M[r][col]) > Math.abs(M[maxRow][col])) maxRow = r;
+        [M[col], M[maxRow]] = [M[maxRow], M[col]];
+        if (Math.abs(M[col][col]) < 1e-12) {
+            showError('Matriks singular — tidak ada solusi unik. Coba ubah nilai.');
+            return;
+        }
+        for (let row = col+1; row < N; row++) {
+            const f = M[row][col] / M[col][col];
+            for (let k = col; k <= N; k++) M[row][k] -= f * M[col][k];
+        }
+    }
 
-            st.markdown('<p class="section-label">Verifikasi Ax = b</p>', unsafe_allow_html=True)
-            if n <= 20:
-                st.dataframe(pd.DataFrame({
-                    "Ax (hasil)": np.round(Ax, 4),
-                    "b (target)": np.round(b_orig, 4),
-                    "Selisih |Ax−b|": np.round(np.abs(Ax - b_orig), 8)
-                }), use_container_width=True)
+    // Substitusi mundur
+    let x = new Array(N).fill(0);
+    for (let i = N-1; i >= 0; i--) {
+        x[i] = M[i][N];
+        for (let j = i+1; j < N; j++) x[i] -= M[i][j] * x[j];
+        x[i] /= M[i][i];
+    }
 
-            status = "✓ VALID" if valid else "✗ GAGAL"
-            note = "Solusi akurat ✓" if valid else "Periksa input"
-            st.markdown(f'''<div class="result-box">
-                <div style="font-size:.72rem;color:#a78bfa;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">Hasil Verifikasi</div>
-                <div class="result-value">{status}</div>
-                <div style="margin-top:8px;color:#94a3b8;font-size:.85rem">
-                    Sistem {n}×{n} · Maks selisih |Ax−b| = {max_err:.2e} · {note}
-                </div>
-            </div>''', unsafe_allow_html=True)
+    // Verifikasi
+    let maxErr = 0;
+    for (let i = 0; i < N; i++) {
+        let ax = 0;
+        for (let j = 0; j < N; j++) ax += A_orig[i][j] * x[j];
+        maxErr = Math.max(maxErr, Math.abs(ax - b_orig[i]));
+    }
 
-            # Download hasil
-            buf_g = io.BytesIO()
-            np.savetxt(buf_g, np.column_stack([A_orig, b_orig]), fmt="%.4f", delimiter="\t",
-                       header="\t".join([f"x{i+1}" for i in range(n)] + ["b"]))
-            st.download_button("⬇️ Unduh sistem_gauss.txt", buf_g.getvalue(), "sistem_gauss.txt", "text/plain")
+    // Tampilkan solusi
+    const solGrid = document.getElementById('sol-grid');
+    solGrid.innerHTML = '';
+    const showAll = N <= 50;
+    const limit = showAll ? N : 20;
+    for (let i = 0; i < limit; i++) {
+        const card = document.createElement('div');
+        card.className = 'sol-card';
+        card.innerHTML = '<div class="sol-var">x' + (i+1) + '</div><div class="sol-val">' + x[i].toFixed(4) + '</div>';
+        solGrid.appendChild(card);
+    }
+    if (!showAll) {
+        const more = document.createElement('div');
+        more.style.cssText = 'color:#64748b;font-size:.8rem;align-self:center;padding:10px';
+        more.textContent = '... dan ' + (N-20) + ' variabel lainnya';
+        solGrid.appendChild(more);
+    }
 
-        except Exception as e:
-            st.error(f"Error: {e}")
+    const valid = maxErr < 1e-6;
+    document.getElementById('verif-box').innerHTML =
+        '<div style="font-size:.7rem;color:#a78bfa;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">Verifikasi Ax = b</div>' +
+        '<div class="verif-status ' + (valid?'status-ok':'status-err') + '">' + (valid?'✓ VALID':'✗ GAGAL') + '</div>' +
+        '<div style="margin-top:8px;color:#94a3b8;font-size:.82rem">Sistem ' + N + '×' + N + ' · Maks |Ax−b| = ' + maxErr.toExponential(2) + (valid?' · Solusi akurat ✓':'') + '</div>';
+
+    document.getElementById('result-section').style.display = 'block';
+}
+
+function showError(msg) {
+    document.getElementById('result-section').style.display = 'block';
+    document.getElementById('sol-grid').innerHTML = '<div class="error-msg">⚠️ ' + msg + '</div>';
+    document.getElementById('verif-box').innerHTML = '';
+}
+
+// Init
+buildGrid();
+</script>
+"""
+
+    st.components.v1.html(gauss_html, height=780, scrolling=True)
 
 # ════════════════════════════════════════════════════════════
 # DETERMINAN & INVERS

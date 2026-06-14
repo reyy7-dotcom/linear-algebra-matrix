@@ -277,13 +277,13 @@ elif menu == "➗ Eliminasi Gauss":
 
 .result-section { margin-top:16px; }
 .result-title { color:#60a5fa; font-size:.72rem; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:10px; }
-.sol-grid { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; max-height:320px; overflow-y:auto; padding:4px; }
+.sol-grid { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; max-height:400px; overflow-y:auto; padding:4px; }
 .sol-card {
     background:#0f172a; border:1px solid rgba(255,255,255,0.07);
-    border-radius:10px; padding:10px 14px; min-width:90px; text-align:center;
+    border-radius:8px; padding:6px 10px; min-width:70px; text-align:center;
 }
-.sol-var { font-size:.68rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
-.sol-val { font-family:'JetBrains Mono',monospace; font-size:1rem; font-weight:700; color:#34d399; }
+.sol-var { font-size:.62rem; color:#64748b; text-transform:uppercase; letter-spacing:1px; margin-bottom:2px; }
+.sol-val { font-family:'JetBrains Mono',monospace; font-size:.82rem; font-weight:700; color:#34d399; }
 .verif-box {
     background:linear-gradient(135deg,#0f172a,#1e1b4b);
     border:1px solid rgba(139,92,246,.3); border-radius:12px;
@@ -293,6 +293,20 @@ elif menu == "➗ Eliminasi Gauss":
 .status-ok  { color:#34d399; }
 .status-err { color:#f87171; }
 .error-msg  { color:#f87171; background:rgba(248,113,113,.1); border:1px solid rgba(248,113,113,.3); border-radius:8px; padding:10px 14px; font-size:.85rem; margin-top:10px; }
+.log-section { margin-top:18px; }
+.log-header  { color:#f87171; font-size:1rem; font-weight:700; margin-bottom:12px; border-left:3px solid #f87171; padding-left:10px; }
+.log-block   { margin-bottom:18px; }
+.log-title   { color:#fbbf24; font-size:.78rem; font-weight:600; margin-bottom:8px; }
+.log-table-wrap { overflow-x:auto; border-radius:8px; }
+.log-table   { border-collapse:collapse; font-family:"JetBrains Mono",monospace; font-size:.78rem; min-width:100%; }
+.log-table th { background:#1e293b; color:#94a3b8; padding:6px 10px; text-align:center; border:1px solid rgba(255,255,255,0.07); font-weight:600; }
+.log-table th.b-head { color:#a78bfa; }
+.log-table td { padding:5px 10px; text-align:center; border:1px solid rgba(255,255,255,0.05); color:#e2e8f0; }
+.log-table td.row-lbl { color:#475569; font-size:.7rem; background:#0f172a; }
+.log-table td.b-cell  { color:#c4b5fd; background:rgba(139,92,246,0.08); }
+.log-table tr.hl-row td { background:rgba(96,165,250,0.1); color:#93c5fd; }
+.chk-log { display:flex; align-items:center; gap:8px; margin-bottom:14px; cursor:pointer; font-size:.85rem; color:#94a3b8; user-select:none; }
+.chk-log input { width:16px; height:16px; accent-color:#f87171; cursor:pointer; }
 </style>
 
 <div class="gauss-wrap">
@@ -312,8 +326,17 @@ elif menu == "➗ Eliminasi Gauss":
     <div class="matrix-grid" id="matrix-grid"></div>
   </div>
 
+  <label class="chk-log">
+    <input type="checkbox" id="chk-log" checked>
+    Tampilkan Solution Log / Jalan Pengerjaan
+  </label>
   <div style="text-align:left;margin-bottom:12px">
     <button class="gauss-btn btn-calc" onclick="calculate()">▶ Calculate</button>
+  </div>
+
+  <div class="log-section" id="solution-log" style="display:none">
+    <div class="log-header">📋 Solution Log</div>
+    <div id="log-content"></div>
   </div>
 
   <div class="result-section" id="result-section" style="display:none">
@@ -404,6 +427,23 @@ function clearMatrix() {
     document.getElementById('result-section').style.display = 'none';
 }
 
+function matrixToHTML(mat, n, title, highlight_row) {
+    let html = '<div class="log-block"><div class="log-title">' + title + '</div><div class="log-table-wrap"><table class="log-table"><thead><tr><th></th>';
+    for (let j = 0; j < n; j++) html += '<th>x'+(j+1)+'</th>';
+    html += '<th class="b-head">b</th></tr></thead><tbody>';
+    for (let i = 0; i < n; i++) {
+        const hl = (highlight_row !== undefined && i === highlight_row) ? ' class="hl-row"' : '';
+        html += '<tr'+hl+'><td class="row-lbl">P'+(i+1)+'</td>';
+        for (let j = 0; j <= n; j++) {
+            const cls = j === n ? ' class="b-cell"' : '';
+            html += '<td'+cls+'>' + mat[i][j].toFixed(3) + '</td>';
+        }
+        html += '</tr>';
+    }
+    html += '</tbody></table></div></div>';
+    return html;
+}
+
 function calculate() {
     // Baca matriks augmented
     let M = [];
@@ -416,12 +456,21 @@ function calculate() {
     const A_orig = M.map(r => r.slice(0, N));
     const b_orig = M.map(r => r[N]);
 
+    // Solution Log
+    const showLog = document.getElementById('chk-log').checked;
+    let logHTML = '';
+    if (showLog) logHTML += matrixToHTML(M, N, 'Matriks Awal (Augmentasi)');
+
     // Eliminasi Gauss dengan partial pivoting
+    let stepNum = 1;
     for (let col = 0; col < N; col++) {
-        // Cari pivot terbesar
         let maxRow = col;
         for (let r = col+1; r < N; r++) if (Math.abs(M[r][col]) > Math.abs(M[maxRow][col])) maxRow = r;
-        [M[col], M[maxRow]] = [M[maxRow], M[col]];
+        if (maxRow !== col) {
+            [M[col], M[maxRow]] = [M[maxRow], M[col]];
+            if (showLog && N <= 10) logHTML += matrixToHTML(M, N, 'Langkah '+stepNum+': Tukar R'+(col+1)+' ↔ R'+(maxRow+1), col);
+            stepNum++;
+        }
         if (Math.abs(M[col][col]) < 1e-12) {
             showError('Matriks singular — tidak ada solusi unik. Coba ubah nilai.');
             return;
@@ -429,8 +478,14 @@ function calculate() {
         for (let row = col+1; row < N; row++) {
             const f = M[row][col] / M[col][col];
             for (let k = col; k <= N; k++) M[row][k] -= f * M[col][k];
+            if (showLog && N <= 10) {
+                logHTML += matrixToHTML(M, N, 'Langkah '+stepNum+': R'+(row+1)+' = R'+(row+1)+' − ('+f.toFixed(3)+')×R'+(col+1), row);
+                stepNum++;
+            }
         }
     }
+    if (showLog) logHTML += matrixToHTML(M, N, 'Matriks Segitiga Atas (Hasil Eliminasi)');
+    if (showLog && N > 10) logHTML += '<div style="color:#fbbf24;font-size:.8rem;padding:10px;background:rgba(251,191,36,.08);border-radius:8px;margin-top:8px">ℹ️ Detail langkah disembunyikan untuk sistem '+N+'×'+N+' — hanya matriks awal & akhir ditampilkan.</div>';
 
     // Substitusi mundur
     let x = new Array(N).fill(0);
@@ -438,6 +493,15 @@ function calculate() {
         x[i] = M[i][N];
         for (let j = i+1; j < N; j++) x[i] -= M[i][j] * x[j];
         x[i] /= M[i][i];
+    }
+
+    // Render solution log
+    const logEl = document.getElementById('solution-log');
+    if (showLog) {
+        logEl.style.display = 'block';
+        document.getElementById('log-content').innerHTML = logHTML;
+    } else {
+        logEl.style.display = 'none';
     }
 
     // Verifikasi

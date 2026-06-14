@@ -224,88 +224,163 @@ elif menu == "📊 Analisis Eigen":
 # ════════════════════════════════════════════════════════════
 elif menu == "➗ Eliminasi Gauss":
     st.markdown('<p class="section-label">Sistem Persamaan Linear Ax = b</p>', unsafe_allow_html=True)
+
     st.markdown("""<div class="info-card">
-    Masukkan matriks augmented [A|b]. Setiap baris adalah satu persamaan.
-    Pisahkan angka dengan spasi, pisahkan baris dengan baris baru.
-    Kolom terakhir adalah vektor b.
+    Input nilai matriks [A|b] langsung di tabel — klik sel untuk edit.
+    Gunakan tombol <b>🎲 Isi Otomatis</b> untuk generate angka random ke grid,
+    atau ketik manual per sel. Mendukung hingga <b>100×100</b>.
     </div>""", unsafe_allow_html=True)
 
-    n_eq = st.selectbox("Jumlah Persamaan (n×n)", [2,3,4,5], index=1)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        n_grid = st.number_input("Ukuran Sistem (n)", min_value=2, max_value=100, value=3, step=1)
+    with c2:
+        seed_g = st.number_input("Seed (untuk isi otomatis)", 0, 99999, 42)
+    with c3:
+        val_min = st.number_input("Nilai Min", -100, 100, 1)
+    with c4:
+        val_max = st.number_input("Nilai Maks", -100, 100, 10)
 
-    default_systems = {
-        2: "2 1 5\n4 3 11",
-        3: "2 1 -1 8\n-3 -1 2 -11\n-2 1 2 -3",
-        4: "1 2 0 1 7\n2 3 1 0 8\n0 1 2 3 14\n1 0 3 2 10",
-        5: "2 1 0 0 1 6\n1 3 1 0 0 9\n0 1 2 1 0 8\n0 0 1 3 1 10\n1 0 0 1 4 12",
-    }
+    n_grid = int(n_grid)
 
-    raw = st.text_area("Matriks Augmented [A|b]", value=default_systems[n_eq], height=150,
-                       help="Setiap baris = 1 persamaan. Kolom terakhir = nilai b.")
+    # Tombol isi otomatis — generate ke session_state
+    if st.button("🎲 Isi Otomatis", help="Generate angka random ke tabel"):
+        np.random.seed(seed_g)
+        A_auto = np.random.randint(val_min if val_min < val_max else 1, val_max+1, size=(n_grid, n_grid)).astype(float)
+        # Diagonal dominan agar selalu punya solusi unik
+        np.fill_diagonal(A_auto, np.sum(np.abs(A_auto), axis=1) + 1)
+        b_auto = np.random.randint(val_min if val_min < val_max else 1, val_max+1, size=n_grid).astype(float)
+        Ab_auto = np.column_stack([A_auto, b_auto])
+        st.session_state["gauss_grid"] = Ab_auto
+        st.session_state["gauss_n"] = n_grid
 
+    # Inisialisasi grid jika belum ada atau ukuran berubah
+    if "gauss_grid" not in st.session_state or st.session_state.get("gauss_n") != n_grid:
+        Ab_init = np.zeros((n_grid, n_grid + 1))
+        # Isi contoh default untuk sistem kecil
+        if n_grid == 2:
+            Ab_init = np.array([[2,1,5],[4,3,11]], dtype=float)
+        elif n_grid == 3:
+            Ab_init = np.array([[2,1,-1,8],[-3,-1,2,-11],[-2,1,2,-3]], dtype=float)
+        st.session_state["gauss_grid"] = Ab_init
+        st.session_state["gauss_n"] = n_grid
+
+    Ab_current = st.session_state["gauss_grid"]
+
+    # Pastikan dimensi grid sesuai n_grid (jika user ubah n)
+    if Ab_current.shape != (n_grid, n_grid + 1):
+        Ab_current = np.zeros((n_grid, n_grid + 1))
+        st.session_state["gauss_grid"] = Ab_current
+
+    # Tampilkan grid sebagai st.data_editor — bisa diedit per sel
+    st.markdown('<p class="section-label">Input Matriks [A | b] — Klik Sel untuk Edit</p>', unsafe_allow_html=True)
+    col_names = [f"x{i+1}" for i in range(n_grid)] + ["b (hasil)"]
+    df_grid = pd.DataFrame(Ab_current, columns=col_names, index=[f"P{i+1}" for i in range(n_grid)])
+
+    edited_df = st.data_editor(
+        df_grid,
+        use_container_width=True,
+        height=min(400, 40 + n_grid * 35),
+        key=f"gauss_editor_{n_grid}",
+        column_config={col: st.column_config.NumberColumn(col, format="%.2f") for col in col_names}
+    )
+
+    # Tombol selesaikan
     if st.button("▶ Selesaikan dengan Eliminasi Gauss", type="primary"):
         try:
-            rows = [[float(x) for x in r.split()] for r in raw.strip().split('\n') if r.strip()]
-            Ab = np.array(rows, dtype=float)
-            n = Ab.shape[0]
-            if Ab.shape[1] != n+1:
-                st.error(f"Butuh {n} persamaan dengan {n+1} kolom (termasuk b). Sekarang ada {Ab.shape[1]} kolom.")
-            else:
+            Ab = edited_df.values.astype(float)
+            n = n_grid
+            A_orig = Ab[:, :n].copy()
+            b_orig = Ab[:, n].copy()
+            M = Ab.copy()
+
+            # Validasi: cek apakah semua nol
+            if np.all(A_orig == 0):
+                st.error("Matriks A kosong — isi nilai dulu atau klik Isi Otomatis.")
+                st.stop()
+
+            # Eliminasi Gauss dengan partial pivoting
+            with st.spinner(f"Menghitung Eliminasi Gauss {n}×{n}..."):
                 steps = []
-                M = Ab.copy()
-
-                st.markdown('<p class="section-label">Matriks Awal [A|b]</p>', unsafe_allow_html=True)
-                st.dataframe(pd.DataFrame(M, columns=[f"x{i+1}" for i in range(n)]+["b"]), use_container_width=True)
-
-                # Eliminasi maju dengan partial pivoting
                 for col in range(n):
-                    # Partial pivoting
-                    max_row = np.argmax(abs(M[col:, col])) + col
+                    max_row = int(np.argmax(np.abs(M[col:, col]))) + col
                     if max_row != col:
                         M[[col, max_row]] = M[[max_row, col]]
-                        steps.append({"title": f"Tukar baris R{col+1} ↔ R{max_row+1}", "matrix": M.copy()})
-
+                        if n <= 5:
+                            steps.append({"title": f"Tukar R{col+1} ↔ R{max_row+1}", "matrix": M.copy()})
                     if abs(M[col, col]) < 1e-12:
-                        st.error("Matriks singular — sistem tidak memiliki solusi unik.")
+                        st.error("Matriks singular — tidak ada solusi unik. Coba ubah nilai matriks.")
                         st.stop()
-
                     for row in range(col+1, n):
                         factor = M[row, col] / M[col, col]
-                        M[row] = M[row] - factor * M[col]
-                        steps.append({
-                            "title": f"R{row+1} = R{row+1} − ({factor:.4f}) × R{col+1}",
-                            "matrix": M.copy()
-                        })
+                        M[row] -= factor * M[col]
+                        if n <= 5:
+                            steps.append({"title": f"R{row+1} = R{row+1} − ({factor:.3f})×R{col+1}", "matrix": M.copy()})
 
+            # Langkah detail hanya untuk sistem ≤5
+            if n <= 5 and steps:
                 st.markdown('<p class="section-label">Langkah Eliminasi Maju</p>', unsafe_allow_html=True)
                 for i, s in enumerate(steps):
                     with st.expander(f"Langkah {i+1}: {s['title']}"):
-                        st.dataframe(pd.DataFrame(
-                            np.round(s['matrix'], 4),
-                            columns=[f"x{i+1}" for i in range(n)]+["b"]
-                        ), use_container_width=True)
+                        st.dataframe(pd.DataFrame(np.round(s["matrix"], 4),
+                                                  columns=[f"x{j+1}" for j in range(n)]+["b"]),
+                                     use_container_width=True)
+            elif n > 5:
+                st.markdown('<p class="section-label">Matriks Segitiga Atas</p>', unsafe_allow_html=True)
+                st.info(f"Sistem {n}×{n} — langkah detail disembunyikan, tampil matriks akhir.")
+                st.dataframe(pd.DataFrame(np.round(M, 4),
+                                          columns=[f"x{i+1}" for i in range(n)]+["b"],
+                                          index=[f"P{i+1}" for i in range(n)]),
+                             height=300, use_container_width=True)
 
-                # Substitusi mundur
-                x = np.zeros(n)
-                for i in range(n-1, -1, -1):
-                    x[i] = (M[i,-1] - np.dot(M[i,i+1:n], x[i+1:n])) / M[i,i]
+            # Substitusi mundur
+            x_sol = np.zeros(n)
+            for i in range(n-1, -1, -1):
+                x_sol[i] = (M[i, -1] - np.dot(M[i, i+1:n], x_sol[i+1:n])) / M[i, i]
 
-                st.markdown('<p class="section-label">Solusi</p>', unsafe_allow_html=True)
-                cols = st.columns(n)
-                for i, c in enumerate(cols):
-                    c.metric(f"x{i+1}", f"{x[i]:.4f}")
+            # Tampilkan solusi
+            st.markdown('<p class="section-label">Solusi x</p>', unsafe_allow_html=True)
+            if n <= 10:
+                sol_cols = st.columns(min(n, 5))
+                for i in range(n):
+                    sol_cols[i % 5].metric(f"x{i+1}", f"{x_sol[i]:.4f}")
+            else:
+                st.dataframe(pd.DataFrame({
+                    "Variabel": [f"x{i+1}" for i in range(n)],
+                    "Nilai": np.round(x_sol, 6)
+                }), height=320, use_container_width=True)
 
-                # Verifikasi
-                A_orig = np.array([[float(v) for v in r.split()[:n]] for r in raw.strip().split('\n') if r.strip()])
-                b_orig = np.array([float(r.split()[-1]) for r in raw.strip().split('\n') if r.strip()])
-                Ax = A_orig @ x
-                st.markdown('<p class="section-label">Verifikasi Ax = b</p>', unsafe_allow_html=True)
-                verif = pd.DataFrame({"Ax (hasil)": np.round(Ax,4), "b (target)": b_orig, "Selisih": np.round(abs(Ax-b_orig),6)})
-                st.dataframe(verif, use_container_width=True)
-                if np.allclose(Ax, b_orig):
-                    st.success("✓ Solusi terverifikasi — Ax = b terpenuhi!")
+            # Verifikasi
+            Ax = A_orig @ x_sol
+            max_err = float(np.max(np.abs(Ax - b_orig)))
+            valid = max_err < 1e-6
+
+            st.markdown('<p class="section-label">Verifikasi Ax = b</p>', unsafe_allow_html=True)
+            if n <= 20:
+                st.dataframe(pd.DataFrame({
+                    "Ax (hasil)": np.round(Ax, 4),
+                    "b (target)": np.round(b_orig, 4),
+                    "Selisih |Ax−b|": np.round(np.abs(Ax - b_orig), 8)
+                }), use_container_width=True)
+
+            status = "✓ VALID" if valid else "✗ GAGAL"
+            note = "Solusi akurat ✓" if valid else "Periksa input"
+            st.markdown(f'''<div class="result-box">
+                <div style="font-size:.72rem;color:#a78bfa;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">Hasil Verifikasi</div>
+                <div class="result-value">{status}</div>
+                <div style="margin-top:8px;color:#94a3b8;font-size:.85rem">
+                    Sistem {n}×{n} · Maks selisih |Ax−b| = {max_err:.2e} · {note}
+                </div>
+            </div>''', unsafe_allow_html=True)
+
+            # Download hasil
+            buf_g = io.BytesIO()
+            np.savetxt(buf_g, np.column_stack([A_orig, b_orig]), fmt="%.4f", delimiter="\t",
+                       header="\t".join([f"x{i+1}" for i in range(n)] + ["b"]))
+            st.download_button("⬇️ Unduh sistem_gauss.txt", buf_g.getvalue(), "sistem_gauss.txt", "text/plain")
 
         except Exception as e:
-            st.error(f"Error parsing input: {e}")
+            st.error(f"Error: {e}")
 
 # ════════════════════════════════════════════════════════════
 # DETERMINAN & INVERS
